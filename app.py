@@ -27,6 +27,10 @@ DATA_URL = os.getenv("DATA_URL", "https://www.tboo.ru/gpn/data.json")
 CITY_NAME = os.getenv("CITY_NAME", "Раменское")
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "600"))
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:local-monitor@example.com")
+APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
+APP_PORT = int(os.getenv("APP_PORT", "8080"))
+SSL_CERT_FILE = os.getenv("SSL_CERT_FILE", "").strip()
+SSL_KEY_FILE = os.getenv("SSL_KEY_FILE", "").strip()
 
 TARGET_FUELS = {
     "92": "АИ-92",
@@ -498,8 +502,22 @@ def main() -> None:
     monitor = threading.Thread(target=monitor_loop, name="fuel-monitor", daemon=True)
     monitor.start()
     atexit.register(stop_event.set)
-    log.info("Монитор открыт: http://127.0.0.1:8080")
-    app.run(host="127.0.0.1", port=8080, debug=False, use_reloader=False)
+
+    if bool(SSL_CERT_FILE) != bool(SSL_KEY_FILE):
+        raise RuntimeError(
+            "SSL_CERT_FILE и SSL_KEY_FILE должны быть заданы одновременно"
+        )
+    ssl_context = (SSL_CERT_FILE, SSL_KEY_FILE) if SSL_CERT_FILE else None
+    scheme = "https" if ssl_context else "http"
+    display_host = "0.0.0.0" if APP_HOST == "0.0.0.0" else APP_HOST
+    log.info("Монитор открыт: %s://%s:%d", scheme, display_host, APP_PORT)
+    app.run(
+        host=APP_HOST,
+        port=APP_PORT,
+        debug=False,
+        use_reloader=False,
+        ssl_context=ssl_context,
+    )
 
 
 if __name__ == "__main__":
