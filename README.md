@@ -33,6 +33,30 @@ http://127.0.0.1:8080
 
 Для постоянной работы добавьте запуск `python app.py` в Планировщик заданий Windows или установите приложение как службу через NSSM/WinSW. Не запускайте одновременно несколько экземпляров с одной папкой данных.
 
+## Debian и доступ по локальному IP
+
+Приложение по умолчанию слушает только `127.0.0.1`. Для доступа с других устройств локальной сети задайте:
+
+```bash
+export APP_HOST=0.0.0.0
+export APP_PORT=8080
+python app.py
+```
+
+После этого интерфейс будет доступен по `http://192.168.1.88:8080`. Открывайте в брандмауэре только нужный порт и только для локальной сети.
+
+Важно: Service Worker и Web Push не работают на обычном HTTP-адресе локальной сети. Исключение браузеров действует для `localhost`, но не для `192.168.1.88`. Для push-уведомлений можно включить HTTPS непосредственно во Flask без Nginx:
+
+```bash
+export APP_HOST=0.0.0.0
+export APP_PORT=8443
+export SSL_CERT_FILE=/opt/ramenskoe-gpn-monitor/instance/tls/server.crt
+export SSL_KEY_FILE=/opt/ramenskoe-gpn-monitor/instance/tls/server.key
+python app.py
+```
+
+Сертификат должен содержать IP-адрес `192.168.1.88` в Subject Alternative Name, а выпустивший его локальный центр сертификации должен быть добавлен в доверенные на каждом клиентском устройстве. Тогда сайт открывается по `https://192.168.1.88:8443`, а push работает без домена.
+
 ## Настройки
 
 Параметры задаются переменными окружения:
@@ -42,6 +66,8 @@ $env:POLL_INTERVAL_SECONDS = "600"
 $env:CITY_NAME = "Раменское"
 $env:DATA_URL = "https://www.tboo.ru/gpn/data.json"
 $env:VAPID_SUBJECT = "mailto:you@example.com"
+$env:APP_HOST = "0.0.0.0"
+$env:APP_PORT = "8080"
 python app.py
 ```
 
