@@ -42,6 +42,12 @@ TARGET_FUELS = {
 # Ограничение r=136 не позволяет захватить одноимённые АЗС из других регионов.
 EXTRA_STATIONS = {("АЗС №194", "136")}
 
+STATION_DISPLAY_NAMES = {
+    "АЗС №205": "АЗС на Северке",
+    "АЗС №194": "АЗС в Сафоново",
+    "АЗС №504": "АЗС за мостом",
+}
+
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(message)s",
@@ -221,7 +227,8 @@ def check_fuel(*, notify: bool = True) -> dict[str, Any]:
 
             for station in stations:
                 key = station_key(station)
-                name = str(station.get("n", "АЗС"))
+                source_name = str(station.get("n", "АЗС"))
+                name = STATION_DISPLAY_NAMES.get(source_name, source_name)
                 station_city = str(station.get("c", CITY_NAME))
                 latitude = float(station["la"])
                 longitude = float(station["lo"])
