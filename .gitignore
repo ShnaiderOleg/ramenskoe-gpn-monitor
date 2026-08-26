@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+instance/
+.pip-cache/
+local-server.log
+local-server-error.log
+
