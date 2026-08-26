@@ -12,7 +12,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { color: white; background: #1466d9; border-color: #1466d9; }
 #message { color: #29704a; font-size: .9rem; }
 #message.bad { color: #b33434; }
-.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0; }
+.summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
 .summary div { padding: 16px; background: #122a52; color: white; border-radius: 14px; }
 .summary span, .summary strong { display: block; }
 .summary span { margin-bottom: 7px; color: #a9c4ef; font-size: .78rem; }

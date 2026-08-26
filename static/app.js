@@ -30,7 +30,6 @@ async function refreshSubscriptionButtons() {
   $("#subscribe").textContent = subscription
     ? "Отключить уведомления"
     : "Включить уведомления";
-  $("#test").disabled = !subscription;
 }
 
 async function toggleSubscription() {
@@ -116,6 +115,7 @@ async function loadStatus() {
   $("#last-check").textContent = formatDate(data.last_check);
   $("#source-updated").textContent = data.source_updated || "—";
   $("#subscriptions").textContent = data.subscriptions;
+  $("#telegram-status").textContent = data.telegram_configured ? "Настроен" : "Нет токена";
   const error = $("#error");
   error.hidden = !data.last_error;
   error.textContent = data.last_error ? `Ошибка последней проверки: ${data.last_error}` : "";
@@ -146,7 +146,8 @@ async function boot() {
   $("#test").addEventListener("click", async () => {
     try {
       const result = await postAction("/api/test-notification", "Отправляю…");
-      setMessage(`Тестовый push отправлен: ${result.delivered}`);
+      const telegram = result.telegram_delivered ? "отправлено" : "не отправлено";
+      setMessage(`Браузер: ${result.push_delivered} · Telegram: ${telegram}`);
     } catch (error) { setMessage(error.message, true); }
   });
   $("#check").addEventListener("click", async () => {

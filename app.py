@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from datetime import datetime
@@ -22,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DB_PATH = INSTANCE_DIR / "monitor.sqlite3"
 VAPID_PRIVATE_KEY_PATH = INSTANCE_DIR / "vapid_private.pem"
+TELEGRAM_BOT_TOKEN_PATH = INSTANCE_DIR / "telegram_bot_token.txt"
 
 DATA_URL = os.getenv("DATA_URL", "https://www.tboo.ru/gpn/data.json")
 CITY_NAME = os.getenv("CITY_NAME", "Раменское")
@@ -31,6 +33,7 @@ APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.getenv("APP_PORT", "8080"))
 SSL_CERT_FILE = os.getenv("SSL_CERT_FILE", "").strip()
 SSL_KEY_FILE = os.getenv("SSL_KEY_FILE", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-5488632193").strip()
 
 TARGET_FUELS = {
     "92": "АИ-92",
@@ -210,6 +213,59 @@ def send_push_to_all(payload: dict[str, Any]) -> int:
     return delivered
 
 
+def get_telegram_bot_token() -> str:
+    """Read the token on every send so it can be added without restarting."""
+    environment_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if environment_token:
+        return environment_token
+    try:
+        lines = TELEGRAM_BOT_TOKEN_PATH.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            token = line.strip()
+            if token and not token.startswith("#"):
+                return token
+        # Позволяем вставить токен прямо в строку-подсказку после символа #.
+        for line in lines:
+            match = re.search(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", line)
+            if match:
+                return match.group(0)
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def telegram_configured() -> bool:
+    return bool(TELEGRAM_CHAT_ID and get_telegram_bot_token())
+
+
+def send_telegram_message(text: str) -> bool:
+    token = get_telegram_bot_token()
+    if not token or not TELEGRAM_CHAT_ID:
+        return False
+
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": text,
+                "disable_web_page_preview": "true",
+            },
+            timeout=(10, 30),
+        )
+        result = response.json() if response.content else {}
+        if response.ok and result.get("ok"):
+            return True
+        log.warning(
+            "Telegram не принял сообщение (HTTP %s): %s",
+            response.status_code,
+            result.get("description", "неизвестная ошибка"),
+        )
+    except (requests.RequestException, ValueError) as exc:
+        log.warning("Ошибка отправки в Telegram: %s", type(exc).__name__)
+    return False
+
+
 def check_fuel(*, notify: bool = True) -> dict[str, Any]:
     if not check_lock.acquire(blocking=False):
         return {"ok": False, "message": "Проверка уже выполняется"}
@@ -317,9 +373,11 @@ def check_fuel(*, notify: bool = True) -> dict[str, Any]:
             db.execute("DELETE FROM meta WHERE key = 'last_error'")
 
         delivered = 0
+        telegram_delivered = 0
         if notify:
             for event in notifications:
                 price_text = f" · {event['price']} ₽/л" if event["price"] else ""
+                map_url = yandex_maps_url(event["latitude"], event["longitude"])
                 delivered += send_push_to_all(
                     {
                         "title": f"Появился {event['fuel_label']}",
@@ -328,21 +386,31 @@ def check_fuel(*, notify: bool = True) -> dict[str, Any]:
                             f"{price_text}"
                         ),
                         "tag": f"fuel-{event['station_key']}-{event['fuel_code']}",
-                        "url": yandex_maps_url(event["latitude"], event["longitude"]),
+                        "url": map_url,
                     }
+                )
+                telegram_price = f"\nЦена: {event['price']} ₽/л" if event["price"] else ""
+                telegram_delivered += int(
+                    send_telegram_message(
+                        f"⛽ Появился {event['fuel_label']}\n"
+                        f"{event['station_name']}, {event['station_city']}"
+                        f"{telegram_price}\nКарта: {map_url}"
+                    )
                 )
 
         log.info(
-            "Проверено станций: %d, новых появлений: %d, push: %d",
+            "Проверено станций: %d, новых появлений: %d, push: %d, Telegram: %d",
             len(stations),
             len(notifications),
             delivered,
+            telegram_delivered,
         )
         return {
             "ok": True,
             "stations": len(stations),
             "appearances": len(notifications),
             "push_delivered": delivered,
+            "telegram_delivered": telegram_delivered,
             "source_updated": source_updated,
             "first_check": is_first_check,
         }
@@ -425,6 +493,7 @@ def status_payload() -> dict[str, Any]:
         "source_updated": meta.get("source_updated"),
         "last_error": meta.get("last_error"),
         "subscriptions": subscription_count,
+        "telegram_configured": telegram_configured(),
         "stations": list(stations.values()),
         "events": events,
     }
@@ -494,7 +563,27 @@ def api_test_notification():
             "url": "/",
         }
     )
-    return jsonify({"ok": delivered > 0, "delivered": delivered})
+    telegram_delivered = send_telegram_message(
+        "🧪 Тест уведомлений\nМонитор бензина в Раменском работает."
+    )
+    configured = telegram_configured()
+    ok = delivered > 0 or telegram_delivered
+    message = None
+    if not ok:
+        message = (
+            "Нет браузерных подписок и не настроен Telegram"
+            if not configured
+            else "Не удалось доставить тестовое уведомление"
+        )
+    return jsonify(
+        {
+            "ok": ok,
+            "message": message,
+            "push_delivered": delivered,
+            "telegram_configured": configured,
+            "telegram_delivered": telegram_delivered,
+        }
+    ), (200 if ok else 503)
 
 
 @app.post("/api/check-now")
